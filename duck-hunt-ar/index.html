@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0E0F13" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Охота на уточек · School 21</title>
+
+  <!-- A-Frame 1.5.0 + MindAR 1.2.5 (проверенная рабочая связка, июнь 2026) -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+
+  <!-- ====================== AR-СЦЕНА ======================
+       autoStart:false  — камеру стартуем по кнопке (требование iOS: нужен жест пользователя)
+       maxTrack:1        — трекаем максимум 1 картинку за раз (главная оптимизация для слабых телефонов)
+       uiScanning/Loading/Error: no — отключаем встроенный UI MindAR, рисуем свой
+       precision: mediump, antialias:false — экономим GPU
+  -->
+  <a-scene
+    id="scene"
+    mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; maxTrack: 1; uiScanning: no; uiLoading: no; uiError: no; filterMinCF: 0.0001; filterBeta: 0.001; warmupTolerance: 5; missTolerance: 5;"
+    color-space="sRGB"
+    renderer="colorManagement: true; antialias: false; precision: mediump; powerPreference: low-power;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+
+    <a-assets timeout="10000">
+      <a-asset-item id="duckModel" src="./assets/duck.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- Свет, чтобы уточка не была чёрной (glTF использует PBR-материал) -->
+    <a-light type="ambient" intensity="1.6"></a-light>
+    <a-light type="directional" intensity="0.7" position="0.5 1 1"></a-light>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- Сюда app.js динамически добавит N целей-уточек (по числу картинок в targets.mind) -->
+  </a-scene>
+
+  <!-- ====================== ОВЕРЛЕЙ ВО ВРЕМЯ ИГРЫ ====================== -->
+
+  <!-- Прозрачный слой для тапа «поймать». Лежит над камерой, но под кнопками действий. -->
+  <div id="tap-catch" aria-hidden="true"></div>
+
+  <!-- Терминальная панель: счётчик + лог пойманных -->
+  <div class="hud" id="hud">
+    <div class="hud-line">
+      <span class="hud-duck">🦆</span>
+      <span class="hud-label">ducks_caught</span>
+      <span class="hud-eq">=</span>
+      <span class="hud-count"><span id="count-now">0</span><span class="hud-sep">/</span><span id="count-total">0</span></span>
+    </div>
+    <div class="hud-log" id="hud-log"></div>
+  </div>
+
+  <!-- Подсказки в кадре -->
+  <div class="hint" id="hint" data-state="scan">
+    <span class="hint-dot"></span>
+    <span id="hint-text">Наведи камеру на стикер с уточкой</span>
+  </div>
+
+  <!-- «+1» при поимке -->
+  <div class="pop" id="pop" aria-hidden="true">+1 🦆</div>
+
+  <!-- Кнопки действий (поверх слоя тапа) -->
+  <div class="ar-actions" id="ar-actions">
+    <button class="chip" id="btn-collection" type="button">Коллекция</button>
+    <button class="chip chip-ghost" id="btn-finish" type="button">Готово</button>
+  </div>
+
+  <!-- ====================== ЭКРАНЫ (модалки) ====================== -->
+
+  <!-- Старт -->
+  <section class="screen screen-start is-active" id="screen-start">
+    <div class="screen-inner">
+      <p class="eyebrow">School 21 · campus quest</p>
+      <h1 class="title">Охота<br>на уточек</h1>
+      <p class="lede">
+        Любой резидент знает: пока не объяснишь баг резиновой уточке — не починишь.
+        Сегодня уточки разбежались по кампусу. Найди стикеры, налови утят, забери приз.
+      </p>
+
+      <label class="field">
+        <span class="field-label">Как тебя зовут?</span>
+        <input id="name-input" class="field-input" type="text" maxlength="24"
+               placeholder="ник для таблицы лидеров" autocomplete="off" />
+      </label>
+
+      <button class="btn-primary" id="btn-start" type="button">
+        Начать охоту
+      </button>
+
+      <details class="how">
+        <summary>как играть</summary>
+        <ol>
+          <li>Иди по кампусу и ищи стикеры с уточками на стенах.</li>
+          <li>Наведи камеру на стикер — на нём появится 3D-уточка.</li>
+          <li>Тапни по экрану, чтобы поймать её. Каждая ловится один раз.</li>
+          <li>Налови больше всех — забери приз у организатора.</li>
+        </ol>
+        <p class="how-note">Нужен доступ к камере. Открывай ссылку в Safari (iOS) или Chrome (Android), а не во встроенном браузере мессенджера.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- Коллекция -->
+  <section class="screen screen-collection" id="screen-collection">
+    <div class="screen-inner">
+      <p class="eyebrow">collection</p>
+      <h2 class="title-sm">Твои уточки</h2>
+      <p class="lede lede-sm" id="collection-summary">Поймано 0 из 0</p>
+      <div class="grid" id="collection-grid"></div>
+      <button class="btn-secondary" id="btn-back-collection" type="button">Назад к охоте</button>
+    </div>
+  </section>
+
+  <!-- Таблица лидеров (только если включена) -->
+  <section class="screen screen-board" id="screen-board">
+    <div class="screen-inner">
+      <p class="eyebrow">leaderboard</p>
+      <h2 class="title-sm">Таблица лидеров</h2>
+      <ol class="board" id="board-list"><li class="board-empty">загрузка…</li></ol>
+      <button class="btn-secondary" id="btn-back-board" type="button">Назад к охоте</button>
+    </div>
+  </section>
+
+  <!-- Финиш -->
+  <section class="screen screen-done" id="screen-done">
+    <div class="screen-inner">
+      <p class="eyebrow">результат</p>
+      <h2 class="title-sm" id="done-title">Готово!</h2>
+      <div class="done-score"><span id="done-count">0</span><span class="done-of">/<span id="done-total">0</span></span></div>
+      <p class="lede lede-sm" id="done-text">Покажи этот экран организатору.</p>
+      <p class="done-name" id="done-name"></p>
+      <div class="done-actions">
+        <button class="btn-secondary" id="btn-board-from-done" type="button" hidden>Таблица лидеров</button>
+        <button class="btn-secondary" id="btn-resume" type="button">Продолжить охоту</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ошибки / подсказки доступа -->
+  <section class="screen screen-error" id="screen-error">
+    <div class="screen-inner">
+      <p class="eyebrow eyebrow-err">внимание</p>
+      <h2 class="title-sm" id="error-title">Что-то пошло не так</h2>
+      <p class="lede lede-sm" id="error-text"></p>
+      <button class="btn-primary" id="btn-error-retry" type="button">Попробовать снова</button>
+      <button class="btn-link" id="btn-error-anyway" type="button" hidden>Всё равно продолжить</button>
+    </div>
+  </section>
+
+  <script src="./js/app.js"></script>
+</body>
+</html>
